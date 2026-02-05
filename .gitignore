@@ -1,0 +1,17 @@
+# Compiled executable
+opengl_blackhole_2d_v2
+
+# Build artifacts
+build/
+*.o
+*.out
+*.exe
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
