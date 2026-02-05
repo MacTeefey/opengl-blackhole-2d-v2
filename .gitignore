@@ -3,6 +3,8 @@ opengl_blackhole_2d_v2
 
 # Build artifacts
 build/
+out/
+bin/
 *.o
 *.out
 *.exe
@@ -23,3 +25,5 @@ build/
 bin/
 *.user
 *.sln
+*.sln
+*.vcxproj
