@@ -25,10 +25,22 @@ void drawCircle(float x, float y, float radius, int segments) {
     glEnd();
 }
 
-// TODO: Implement drawCircleOutline function
-// Use GL_LINE_LOOP (not GL_TRIANGLE_FAN)
+
 // No center vertex needed
 // Loop condition: i < segments (not i <= segments)
+void drawCircleOutline(float x, float y, float radius, int segments) {
+    glBegin(GL_LINE_LOOP); // Uses GL_LINE_LOOP to automatically close loop on itself
+
+    for (int i{0}; i < segments; ++i) {
+        const float angle{(static_cast<float>(i) * 2.0f * static_cast<float>(M_PI)) / static_cast<float>(segments)}; // Also splits the circle into small angles based on number of segments
+        const float ox{x + radius * std::cos(angle)}; // calculates the parameter x
+        const float oy{y + radius * std::sin(angle)}; // and y using math functions
+        glVertex2f(ox, oy); // Draws a line instead of a triangle
+    }
+
+    glEnd();
+}
+
 
 int main() {
     if (!glfwInit()) {
@@ -69,20 +81,13 @@ int main() {
 
     while (!glfwWindowShouldClose(window)) {
         glClear(GL_COLOR_BUFFER_BIT);
+        
+        glColor3f(0.0f, 0.0f, 0.0f); // black color to simulate even horizon
+        drawCircle(0.0f, 0.0f, 1.0f, 100); // circle around origin w/ radius of 1
 
-        // TODO: remove these circles.
-        glColor3f(0.2f, 0.4f, 0.8f);
-        drawCircle(0.0f, 0.0f, 3.0f, 100);
-
-        glColor3f(1.0f, 0.5f, 0.0f);
-        drawCircle(5.0f, 0.0f, 1.5f, 100);
-
-        // TODO: Draw event horizon (black filled circle)
-        // Position: (0, 0), Radius: 1.0, Color: black (0, 0, 0)
-
-        // TODO: Draw photon sphere (cyan outline)
-        // Position: (0, 0), Radius: 1.5, Color: cyan (0, 0.8, 0.8)
-        // Set line width to 2.0 for visibility
+        glColor3f(0.0f, 0.8f, 0.8f); // cyan color to simulate photon sphere
+        glLineWidth(2.0f);  // 2 pixels wide to see outline
+        drawCircleOutline(0.0f, 0.0f, 1.5f, 100); // circle around origin w/ radius of size 1.5
 
         glfwSwapBuffers(window);
         glfwPollEvents();
