@@ -38,6 +38,11 @@ void drawCircleOutline(float x, float y, float radius, int segments) {
     glEnd();
 }
 
+// Detects window size buffer changes and then changes viewport in response
+void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
+    glViewport(0, 0, width, height);  // Update viewport to new framebuffer size
+}
+
 int main() {
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW\n";
@@ -68,25 +73,23 @@ int main() {
     glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
     glViewport(0, 0, fbWidth, fbHeight);
 
-    // TODO: Remove projection setup from here - it should be in the render loop
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glOrtho(-10.0, 10.0, -10.0, 10.0, -1.0, 1.0);
-
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
+    glfwSetFramebufferSizeCallback(window, framebufferSizeCallback); // Creates callback to be used for newly created window
 
     while (!glfwWindowShouldClose(window)) {
         glClear(GL_COLOR_BUFFER_BIT);
+        
+        int currentWidth, currentHeight;
+        glfwGetFramebufferSize(window, &currentWidth, &currentHeight); // Gets the framebuffer size and stores it for the width and height variables
+        const float aspect{static_cast<float>(currentWidth) / static_cast<float>(currentHeight)}; // Calculates aspect ratio on dynamic variables
 
-        // TODO: Calculate aspect ratio using static_cast<float>
-
-        // TODO: Setup projection matrix with aspect ratio correction
-        // Switch to GL_PROJECTION
-        // Reset with glLoadIdentity()
-        // Use glOrtho(-10.0 * aspect, 10.0 * aspect, -10.0, 10.0, -1.0, 1.0)
-
-        // TODO: Switch back to GL_MODELVIEW and reset
+        glMatrixMode(GL_PROJECTION); // Sets up project matrix
+        glLoadIdentity(); // Resets window
+        // Setup projection with aspect correction
+        glOrtho(-10.0 * aspect, 10.0 * aspect, -10.0, 10.0, -1.0, 1.0); 
+        
+        // Switch back to modelview
+        glMatrixMode(GL_MODELVIEW);
+        glLoadIdentity();
 
         // Event horizon
         glColor3f(0.0f, 0.0f, 0.0f);
