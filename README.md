@@ -1,3 +1,5 @@
+Below is the project description from the Hellocpp.dev project for https://github.com/helloCppOrg/OpenGL-2D-Blackhole-Simulator. I have created a new repository, because I am using windows. I will add in my other changes to the repository soon.
+
 # OpenGL 2D Black Hole Simulator
 
 This project creates a 2D black hole gravitational lensing simulation using OpenGL and the Schwarzschild metric. You'll visualize how light rays bend around a massive black hole using numerical integration.
