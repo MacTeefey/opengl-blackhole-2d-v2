@@ -4,7 +4,7 @@
 
 #include <cmath>
 #include <iostream>
-// TODO: Add #include <vector> for storing ray trails and multiple rays
+#include <vector>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -21,8 +21,10 @@ const double G{6.67430e-11};      // Gravitational constant (m³/kg·s²)
 const double BH_MASS{8.54e36};    // Mass in kg
 const double rs{2.0 * G * BH_MASS / (c * c)};  // Schwarzschild radius
 
-// TODO: Add forward declarations for Ray struct and rk4Step function
-// (needed for Ray::integrate method)
+// Forward declarations (needed for Ray::integrate method)
+struct Ray;
+void rk4Step(Ray& ray, double dlambda);
+
 
 void drawCircle(float x, float y, float radius, int segments) {
     glBegin(GL_TRIANGLE_FAN);
@@ -62,7 +64,7 @@ struct Ray {
     double E;      // Conserved energy
     double L;      // Conserved angular momentum
 
-    // TODO: Add trail member variable to store ray path points
+    std::vector<glm::vec2> trail;
 
     Ray(double x, double y, double vx, double vy) {
         // Step 1: Convert Cartesian position to polar coordinates
@@ -94,33 +96,37 @@ struct Ray {
         // Energy E = f * dt/dλ
         E = f * dt_dlambda;
 
-        // TODO: Remove this debug output (4 lines of std::cout) - no longer needed with visualization working
-        std::cout << "\nRay initialized:\n";
-        std::cout << "  Position: r = " << (r / rs) << " rs\n";
-        std::cout << "  Energy: E = " << E << "\n";
-        std::cout << "  Angular momentum: L = " << L << "\n\n";
-
-        // TODO: Store initial position in trail
+        trail.push_back(glm::vec2(static_cast<float>(x), static_cast<float>(y))); // Make sure it starts at launch position
     }
 
-    // TODO: Remove entire displayConservedQuantities() method - debug function no longer needed
-    void displayConservedQuantities() const {
-        std::cout << "Conserved quantities:\n";
-        std::cout << "  E = " << E << " (energy)\n";
-        std::cout << "  L = " << L << " (angular momentum)\n";
-
-        // Show that these define the ray's behavior
-        double impactParameter{L / E};
-        std::cout << "  Impact parameter b = " << impactParameter / rs << " rs\n";
+    // Helper function to check if a ray has crossed the event horizon
+    bool isCaptured() const {
+        return r <= rs * 1.01;
     }
 
-    // TODO: Add isCaptured() helper method
+    // Helper function to check if a ray has escaped the event horizon
+    bool hasEscaped(double maxDistance) const {
+        return r > maxDistance;
+    }
 
-    // TODO: Add hasEscaped() helper method
 
-    // TODO: Add recordPosition() method to convert polar to Cartesian and store in trail
+    // Helper function to convert polar to Cartesian and store in trail
+    void recordPosition() {
+        const float x{static_cast<float>(r * std::cos(phi))};
+        const float y{static_cast<float>(r * std::sin(phi))};
+        trail.push_back(glm::vec2(x, y));
+    }
 
-    // TODO: Add integrate() method that checks capture/escape, calls rk4Step, and records position
+
+    // Helper function that checks capture/escape, calls rk4Step, and records position
+    void integrate(double dlambda, double maxDistance) {
+        if (isCaptured() || hasEscaped(maxDistance)) {
+            return;
+        }
+        rk4Step(*this, dlambda);
+        recordPosition();
+    }
+
 };
 
 // Compute geodesic right-hand side using exact Schwarzschild equations
@@ -200,54 +206,39 @@ void rk4Step(Ray& ray, double dlambda) {
     ray.v_phi += (dlambda / 6.0) * (k1[3] + 2.0 * k2[3] + 2.0 * k3[3] + k4[3]);
 }
 
-// TODO: Remove entire debugRK4Integration() function (delete from here to closing brace) - test function no longer needed
-void debugRK4Integration(Ray ray, int num_steps, double dlambda) {
-    std::cout << "\n=== RK4 Integration Test ===\n";
-    std::cout << "Step size (dlambda): " << dlambda << "\n";
-    std::cout << "Number of steps: " << num_steps << "\n\n";
+// Helper function to render all ray trails with fading
+void drawRays(const std::vector<Ray>& rays) {
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glLineWidth(1.5f);
 
-    // Store initial conserved quantities
-    double initial_L{ray.L};
-    double initial_E{ray.E};
-
-    std::cout << "Initial state:\n";
-    std::cout << "  r = " << (ray.r / rs) << " rs\n";
-    std::cout << "  phi = " << ray.phi << " rad\n";
-    std::cout << "  v_r = " << ray.v_r << "\n";
-    std::cout << "  v_phi = " << ray.v_phi << "\n\n";
-
-    // Run integration steps
-    for (int i{0}; i < num_steps; ++i) {
-        rk4Step(ray, dlambda);
+    // Draws ray trails with fading effect
+    for (const auto& ray : rays) {
+        if (ray.trail.size() < 2) { // Skips rays that cant draw lines
+            continue;
+        }
+        glBegin(GL_LINE_STRIP); // Connect all points in sequence
+        for (size_t i{0}; i < ray.trail.size(); ++i) {
+            const float alpha{0.2f + 0.8f * static_cast<float>(i) / static_cast<float>(ray.trail.size() - 1)}; // gradient from 20% opacity to 100% opacity
+            glColor4f(1.0f, 1.0f, 1.0f, alpha);
+            glVertex2f(ray.trail[i].x, ray.trail[i].y);
+        }
+        glEnd();
     }
 
-    std::cout << "After " << num_steps << " RK4 steps:\n";
-    std::cout << "  r = " << (ray.r / rs) << " rs\n";
-    std::cout << "  phi = " << ray.phi << " rad\n";
-    std::cout << "  v_r = " << ray.v_r << "\n";
-    std::cout << "  v_phi = " << ray.v_phi << "\n\n";
-
-    // Recompute conserved quantities
-    double current_L{ray.r * ray.r * ray.v_phi};
-    double f{1.0 - rs / ray.r};
-    double dt_dlambda{std::sqrt((ray.v_r * ray.v_r) / (f * f) + (ray.r * ray.r * ray.v_phi * ray.v_phi) / f)};
-    double current_E{f * dt_dlambda};
-
-    std::cout << "Conserved quantity check:\n";
-    std::cout << "  Initial L = " << initial_L << "\n";
-    std::cout << "  Current L = " << current_L << "\n";
-    std::cout << "  Initial E = " << initial_E << "\n";
-    std::cout << "  Current E = " << current_E << "\n";
-
-    // Calculate drift percentages
-    double L_drift{std::abs(current_L - initial_L) / std::abs(initial_L) * 100.0};
-    double E_drift{std::abs(current_E - initial_E) / std::abs(initial_E) * 100.0};
-
-    std::cout << "  L drift: " << L_drift << "%\n";
-    std::cout << "  E drift: " << E_drift << "%\n";
+    // Draws current ray positions as bright points
+    glPointSize(3.0f);
+    glColor3f(1.0f, 1.0f, 0.0f); // Bright yellow color
+    glBegin(GL_POINTS);
+    for (const auto& ray : rays) {
+        if (!ray.trail.empty() && !ray.isCaptured()) {
+            glVertex2f(ray.trail.back().x, ray.trail.back().y);
+        }
+    }
+    glEnd();
+    glDisable(GL_BLEND);
 }
 
-// TODO: Create drawRays() function to render all ray trails with fading
 
 int main() {
     if (!glfwInit()) {
@@ -279,12 +270,6 @@ int main() {
     glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
     glViewport(0, 0, fbWidth, fbHeight);
 
-    // TODO: Remove all test code from here down to (and including) debugRK4Integration() call - delete 14 lines total
-    std::cout << "Schwarzschild radius: " << rs << " m\n";
-    std::cout << "  = " << rs / 1000.0 << " km\n";
-    std::cout << "  = " << rs / 1e9 << " million km\n";
-    std::cout << "Photon sphere: " << 1.5 * rs / 1e9 << " million km\n\n";
-
     // Create test ray - horizontal ray approaching from left
     double initialX{-1e11};
     double initialY{-3.27606302719999999e10};
@@ -292,30 +277,28 @@ int main() {
     double velocityY{0.0};
 
     Ray testRay{initialX, initialY, velocityX, velocityY};
-    testRay.displayConservedQuantities();
 
-    // Run integration test
-    const double dlambda{1.0};
-    const int num_steps{10};
-    debugRK4Integration(testRay, num_steps, dlambda);
+    // Viewport dimensions (physical coordinates)
+    const double viewWidth{1e11};   // 100 billion meters
+    const double viewHeight{7.5e10}; // 75 billion meters
 
-    // TODO: Define viewport dimensions (physical coordinates)
-    // (viewWidth = 1e11, viewHeight = 7.5e10)
+    // maxDistance derived from viewport width (2.0 * viewWidth)
+    const double maxDistance{2.0 * viewWidth};
 
-    // TODO: Derive maxDistance from viewport width (2.0 * viewWidth)
+    std::vector<Ray> rays; // A vector to store multiple Ray objects
+    
+    // Ray launch parameters:
+    const int numRays{10};
+    const double startX{-viewWidth};
+    const double vx{c};
+    const double vy{0.0};
 
-    // TODO: Create a vector to store multiple Ray objects
 
-    // TODO: Define ray launch parameters:
-    //   - numRays = 10
-    //   - startX = -viewWidth (left edge of viewport)
-    //   - vx = c (speed of light)
-    //   - vy = 0.0
-
-    // TODO: Launch rays in a loop:
-    // For each ray:
-    //   - Calculate startY = (2.5 + i * 0.1) * rs
-    //   - Create Ray and add to vector with emplace_back
+    // Launch rays in a loop:
+    for (int i{0}; i < numRays; ++i) {
+        const double startY{(2.5 + i * 0.1) * rs};
+        rays.emplace_back(startX, startY, vx, vy);
+    }
 
     while (!glfwWindowShouldClose(window)) {
         glClear(GL_COLOR_BUFFER_BIT);
@@ -324,27 +307,28 @@ int main() {
 
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
-        glOrtho(-10.0 * aspect, 10.0 * aspect, -10.0, 10.0, -1.0, 1.0);
-        // TODO: Replace glOrtho with physical coordinates
+        glOrtho(-viewWidth, viewWidth, -viewHeight, viewHeight, -1.0, 1.0);
 
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
 
         // Event horizon
         glColor3f(0.0f, 0.0f, 0.0f);
-        drawCircle(0.0f, 0.0f, 1.0f, 100);
-        // TODO: Pass event horizon radius (rs) to drawCircle
-
+        const float eventRadius{static_cast<float>(rs)};
+        drawCircle(0.0f, 0.0f, eventRadius, 100);
+        
         // Photon sphere outline
         glColor3f(0.0f, 0.8f, 0.8f);
         glLineWidth(2.0f);
-        drawCircleOutline(0.0f, 0.0f, 1.5f, 100);
-        // TODO: Pass photon sphere radius (1.5 * rs) to drawCircleOutline
+        const float photonRadius{static_cast<float>(1.5 * rs)};
+        drawCircleOutline(0.0f, 0.0f, photonRadius, 100);
+        
+        // Integrates all rays by calling ray.integrate(1.0, maxDistance) for each ray
+        for (auto& ray : rays) {
+            ray.integrate(1.0, maxDistance);
+        }
 
-        // TODO: Integrate all rays by calling ray.integrate(1.0, maxDistance) for each ray
-
-        // TODO: Call drawRays() to render ray trails
-
+        drawRays(rays);
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
