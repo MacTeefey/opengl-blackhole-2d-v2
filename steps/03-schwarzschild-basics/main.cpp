@@ -1,6 +1,6 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
-// TODO: Add #include <glm/glm.hpp> for GLM math library
+#include <glm/glm.hpp>
 
 #include <cmath>
 #include <iostream>
@@ -12,11 +12,11 @@
 const int WIDTH{800};
 const int HEIGHT{600};
 
-// TODO: Define physical constants here
-// - Speed of light (c)
-// - Gravitational constant (G)
-// - Black hole mass (BH_MASS) for Sagittarius A*
-// - Schwarzschild radius (rs = 2GM/c²)
+const double c{299792458.0};      // Speed of light (m/s)
+const double G{6.67430e-11};      // Gravitational constant (m³/kg·s²)
+const double BH_MASS{8.54e36};    // Mass in kg
+const double rs{2.0 * G * BH_MASS / (c * c)};  // Event horizon radius
+
 
 void drawCircle(float x, float y, float radius, int segments) {
     glBegin(GL_TRIANGLE_FAN);
@@ -45,12 +45,51 @@ void drawCircleOutline(float x, float y, float radius, int segments) {
     glEnd();
 }
 
-// TODO: Create Ray struct
-// The Ray struct should store:
-// - Position in polar coordinates (r, phi)
-// - Velocity in polar coordinates (v_r, v_phi)
-// - Conserved quantities (E, L)
-// - Constructor that takes Cartesian position (x, y) and velocity (vx, vy)
+struct Ray {
+    double r;           // Radial distance from black hole
+    double phi;         // Angular position (radians)
+    double v_r;         // Radial velocity (dr/dλ)
+    double v_phi;       // Angular velocity (dφ/dλ)
+    double E;           // Conserved energy parameter
+    double L;           // Conserved angular momentum
+
+    Ray(double x, double y, double vx, double vy) {
+        // Cartesian to polar position conversion
+        r = std::sqrt(x * x + y * y);
+        phi = std::atan2(y, x);
+        
+        // Cartesian to polar velocity conversion 
+        double cos_phi = std::cos(phi);
+        double sin_phi = std::sin(phi);
+        v_r = vx * cos_phi + vy * sin_phi;
+        v_phi = (-vx * sin_phi + vy * cos_phi) / r;
+
+        // L > 0 - Counter-clockwise movement, L < 0 - Clockwise movement 
+        L = r * r * v_phi;
+
+        //
+        double f{1.0 - rs / r}; // Metric coeficient ~0 = event horizon ~1 = infinity
+        double dt_dlambda{std::sqrt((v_r * v_r) / (f * f) + (r * r * v_phi * v_phi) / f)}; // Time derivative along the ray path
+        E = f * dt_dlambda; // The conserved energy parameter
+
+        // Test output
+        std::cout << "\nRay initialized:\n";
+        std::cout << "  Position: r = " << (r / rs) << " rs\n";
+        std::cout << "  Energy: E = " << E << "\n";
+        std::cout << "  Angular momentum: L = " << L << "\n\n";
+    }
+
+    void displayConservedQuantities() const {
+        std::cout << "Conserved quantities:\n";
+        std::cout << "  E = " << E << " (energy)\n";
+        std::cout << "  L = " << L << " (angular momentum)\n";
+
+        // Show that these define the ray's behavior
+        double impactParameter{L / E};
+        std::cout << "  Impact parameter b = " << impactParameter / rs << " rs\n";
+    }
+};
+
 
 int main() {
     if (!glfwInit()) {
@@ -82,13 +121,22 @@ int main() {
     glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
     glViewport(0, 0, fbWidth, fbHeight);
 
-    // TODO: Print black hole properties
-    // - Mass
-    // - Schwarzschild radius in meters and kilometers
+    // Display black hole information
+    std::cout << "\n=== Black Hole Properties ===\n";
+    std::cout << "Mass: " << BH_MASS << " kg (Sagittarius A*)\n";
+    std::cout << "Schwarzschild radius: " << rs << " m\n";
+    std::cout << "  = " << rs / 1000.0 << " km\n";
+    std::cout << "  = " << rs / 1e9 << " million km\n";
+    std::cout << "Photon sphere: " << 1.5 * rs / 1e9 << " million km\n\n";
 
-    // TODO: Create a test Ray
-    // - Initialize with some test position and velocity
-    // - Ray should print its conserved quantities when created
+    // Create test ray - horizontal ray approaching from left
+    double initialX{-1e11};
+    double initialY{-3.27606302719999999e10};
+    double velocityX{c};
+    double velocityY{0.0};              
+
+    Ray testRay{initialX, initialY, velocityX, velocityY};
+    testRay.displayConservedQuantities();      
 
     while (!glfwWindowShouldClose(window)) {
         glClear(GL_COLOR_BUFFER_BIT);
