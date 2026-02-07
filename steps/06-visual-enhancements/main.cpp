@@ -4,7 +4,7 @@
 
 #include <cmath>
 #include <iostream>
-// TODO: Add #include <random> for star generation
+#include <random>
 #include <vector>
 
 #ifndef M_PI
@@ -22,7 +22,7 @@ const double G{6.67430e-11};      // Gravitational constant (m³/kg·s²)
 const double BH_MASS{8.54e36};    // Mass in kg
 const double rs{2.0 * G * BH_MASS / (c * c)};  // Schwarzschild radius
 
-// TODO: Add NUM_STARS constant (200 stars)
+const int NUM_STARS{200};
 
 // Forward declarations (needed for Ray::integrate method)
 struct Ray;
@@ -55,10 +55,22 @@ void drawCircleOutline(float x, float y, float radius, int segments) {
     glEnd();
 }
 
-// TODO: Create drawDashedCircle() function
 // Takes x, y, radius, segments as parameters
 // Loop through segments with step of 2 (i += 2)
 // Draw line segments with gaps for dashed effect
+void drawDashedCircle(float x, float y, float radius, int segments) {
+    // Draw every other segment to create dashes
+    for (int i{0}; i < segments; i += 2) {
+        const float theta1{(static_cast<float>(i) * 2.0f * static_cast<float>(M_PI)) / static_cast<float>(segments)};
+        const float theta2{(static_cast<float>(i + 1) * 2.0f * static_cast<float>(M_PI)) / static_cast<float>(segments)};
+
+        glBegin(GL_LINES); // Connect lines together to create a dashed connected circle
+        glVertex2f(x + radius * std::cos(theta1), y + radius * std::sin(theta1));
+        glVertex2f(x + radius * std::cos(theta2), y + radius * std::sin(theta2));
+        glEnd(); // Add 2 points into the circle
+    }
+}
+
 
 struct Ray {
     // Polar coordinates
@@ -73,7 +85,8 @@ struct Ray {
 
     std::vector<glm::vec2> trail;
 
-    // TODO: Add two member variables for deflection tracking (initialVelocityAngle, deflection)
+    double initialVelocityAngle;  // Direction ray was heading at start
+    double deflection{0.0};       // How much direction has changed
 
     Ray(double x, double y, double vx, double vy) {
         // Step 1: Convert Cartesian position to polar coordinates
@@ -105,6 +118,10 @@ struct Ray {
         // Energy E = f * dt/dλ
         E = f * dt_dlambda;
 
+        // Store initial velocity direction (NOT position angle!)
+        initialVelocityAngle = std::atan2(vy, vx);
+
+
         trail.push_back(glm::vec2(static_cast<float>(x), static_cast<float>(y)));
     }
 
@@ -122,16 +139,32 @@ struct Ray {
         trail.push_back(glm::vec2(x, y));
     }
 
-    void integrate(double dlambda, double maxDistance) {
-        if (isCaptured() || hasEscaped(maxDistance)) {
-            return;
+        void integrate(double dlambda, double maxDistance) {
+            if (isCaptured() || hasEscaped(maxDistance)) {
+                return;
+            }
+            rk4Step(*this, dlambda);
+            recordPosition();
+            updateDeflection();  // Track deflection after each step
         }
-        rk4Step(*this, dlambda);
-        recordPosition();
-        // TODO: Call updateDeflection() to track angular deflection
+
+        void updateDeflection() {
+        // Convert current polar velocity back to Cartesian
+        const double vx_current{v_r * std::cos(phi) - r * v_phi * std::sin(phi)};
+        const double vy_current{v_r * std::sin(phi) + r * v_phi * std::cos(phi)};
+
+        // Calculate current velocity direction
+        const double currentVelocityAngle{std::atan2(vy_current, vx_current)};
+
+        // Measure how much direction has changed
+        deflection = std::abs(currentVelocityAngle - initialVelocityAngle);
+
+        // Handle angle wrapping (deflections > π map back)
+        if (deflection > M_PI) {
+            deflection = 2.0 * M_PI - deflection;
+        }
     }
 
-    // TODO: Add updateDeflection() method
 };
 
 // Compute geodesic right-hand side using exact Schwarzschild equations
@@ -211,10 +244,35 @@ void rk4Step(Ray& ray, double dlambda) {
     ray.v_phi += (dlambda / 6.0) * (k1[3] + 2.0 * k2[3] + 2.0 * k3[3] + k4[3]);
 }
 
-// TODO: Create generateStars() function
+std::vector<glm::vec2> generateStars(int count) {
+    std::vector<glm::vec2> stars;
+    std::random_device rd;
+    std::mt19937 gen(rd());
 
-// TODO: Create drawStars() function
-// Use GL_POINTS to draw all stars
+    // Match your viewport dimensions: ±100 billion meters X, ±75 billion meters Y
+    std::uniform_real_distribution<float> distX(-100000000000.0f, 100000000000.0f);
+    std::uniform_real_distribution<float> distY(-75000000000.0f, 75000000000.0f);
+
+    for (int i{0}; i < count; ++i) {
+        stars.push_back(glm::vec2(distX(gen), distY(gen)));
+    }
+    return stars;
+}
+
+// Uses GL_POINTS to draw all stars
+void drawStars(const std::vector<glm::vec2>& stars) {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<float> brightness(0.5f, 1.0f);
+
+    glBegin(GL_POINTS);
+    for (const auto& star : stars) {
+        float b = brightness(gen);
+        glColor3f(b, b, b);  // Grayscale brightness
+        glVertex2f(star.x, star.y);
+    }
+    glEnd();
+}
 
 // Draw ray trails with fading
 void drawRays(const std::vector<Ray>& rays) {
@@ -227,15 +285,21 @@ void drawRays(const std::vector<Ray>& rays) {
             continue;
         }
 
-        // TODO: Calculate color based on deflection angle (r, g, b)
+        // Normalize deflection (0 to π radians) to 0–1 scale
+        const float maxDeflection{static_cast<float>(M_PI)};
+        const float t{std::min(1.0f, static_cast<float>(ray.deflection) / maxDeflection)};
+
+        // Cyan → Purple → Red gradient
+        const float r{t};              // 0 → 1 (increases with deflection)
+        const float g{0.5f * (1.0f - t)};  // 0.5 → 0 (decreases from mid-value)
+        const float b{1.0f - t};       // 1 → 0 (decreases with deflection)
 
         // Draw trail with fading
         glBegin(GL_LINE_STRIP);
         for (size_t i{0}; i < ray.trail.size(); ++i) {
             const float alpha{0.2f + 0.8f * static_cast<float>(i) / static_cast<float>(ray.trail.size() - 1)};
 
-            // TODO: Use calculated RGB color instead of white
-            glColor4f(1.0f, 1.0f, 1.0f, alpha);
+            glColor4f(r, g, b, alpha);  // Use calculated color
             glVertex2f(ray.trail[i].x, ray.trail[i].y);
         }
         glEnd();
@@ -279,34 +343,38 @@ int main() {
         return -1;
     }
 
-    // TODO: Change clear color to dark space (0.08f, 0.08f, 0.12f, 1.0f)
-    glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
+    // Dark space background with better contrast
+    glClearColor(0.08f, 0.08f, 0.12f, 1.0f);
 
     int fbWidth, fbHeight;
     glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
     glViewport(0, 0, fbWidth, fbHeight);
 
-    // TODO: Enable visual polish features (GL_LINE_SMOOTH, GL_BLEND, GL_NICEST hint)
+    // In your initialization code (after creating OpenGL context)
+    glEnable(GL_LINE_SMOOTH);
+    glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     // Physical viewport dimensions (meters)
     const double viewWidth{1e11};   // 100 billion meters
     const double viewHeight{7.5e10}; // 75 billion meters
     const double maxDistance{2.0 * viewWidth};  // Escape when beyond 2x viewport
 
-    // TODO: Generate stars by calling generateStars(NUM_STARS)
+    // After setting up viewport, generate the star field
+    std::vector<glm::vec2> stars{generateStars(NUM_STARS)};
+
 
     std::vector<Ray> rays;
 
     // Ray launch parameters (all rays start from left edge of viewport)
-    // TODO: Update to 30 for more dramatic visualization
-    const int numRays{10};
+    const int numRays{30};
     const double startX{-viewWidth};  // Left edge of viewport
     const double vx{c};   // Speed of light horizontally
     const double vy{0.0};
 
     for (int i{0}; i < numRays; ++i) {
-        // TODO: Update 0.1 to 0.05 for tighter spacing
-        const double startY{(2.5 + i * 0.1) * rs};
+        const double startY{(2.5 + i * 0.05) * rs};
 
         rays.emplace_back(startX, startY, vx, vy);
 
@@ -324,19 +392,20 @@ int main() {
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
 
-        // TODO: Draw background stars first
+        // Background stars (drawn first, behind everything)
+        drawStars(stars);
 
         // Event horizon
         glColor3f(0.0f, 0.0f, 0.0f);
         const float eventRadius{static_cast<float>(rs)};
         drawCircle(0.0f, 0.0f, eventRadius, 100);
 
-        // Photon sphere outline
-        glColor3f(0.0f, 0.8f, 0.8f);
+        // Photon sphere - dashed cyan outline at 1.5 Rs
+        glColor3f(0.0f, 0.8f, 0.8f);  // Cyan
         glLineWidth(2.0f);
         const float photonRadius{static_cast<float>(1.5 * rs)};
-        // TODO: Replace drawCircleOutline with drawDashedCircle
-        drawCircleOutline(0.0f, 0.0f, photonRadius, 100);
+        drawDashedCircle(0.0f, 0.0f, photonRadius, 100);
+
 
         // Integrate all rays (each ray checks if it should continue)
         for (auto& ray : rays) {
