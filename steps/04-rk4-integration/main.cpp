@@ -105,32 +105,147 @@ struct Ray {
     }
 };
 
-// TODO: Implement geodesicRHS() function
 // This computes the right-hand side of the geodesic differential equations
 // Parameters:
 //   ray - the current state
 //   rhs - output array for [dr/dλ, dφ/dλ, dv_r/dλ, dv_phi/dλ]
+void geodesicRHS(const Ray& ray, double rhs[4]) {
+    double r{ray.r};
+    double v_r{ray.v_r};
+    double v_phi{ray.v_phi};
+    double E{ray.E};
 
-// TODO: Implement addState() helper function
+    double f_rhs{1.0 - rs / r}; // Schwartzschild metric coefficient
+    double dt_dlambda{E / f_rhs}; // change in time over affine parameter
+
+    // rhs[0] = dr/dλ (position derivative = velocity)
+    rhs[0] = v_r;
+    // rhs[1] = dφ/dλ (angular position derivative = angular velocity)
+    rhs[1] = v_phi;
+
+    // rhs[2] = dv_r/dλ (radial acceleration from geodesic equation)
+    // Exact Schwarzschild null geodesic equation:
+    // dv_r/dλ = -(rs/(2r²))f(dt/dλ)² + (rs/(2r²f))(v_r)² + (r - rs)(v_φ)²
+    rhs[2] = -(rs / (2.0 * r * r)) * f_rhs * (dt_dlambda * dt_dlambda) // Gravitational attraction (negative)
+            + (rs / (2.0 * r * r * f_rhs)) * (v_r * v_r) // Radial Velocity Correction (Positive)
+            + (r - rs) * (v_phi * v_phi); // Centrifugal Effect (Positive)
+
+    // rhs[3] = dv_phi/dλ (angular acceleration from geodesic equation)
+    // dv_φ/dλ = -2v_r·v_φ/r
+    rhs[3] = -2.0 * v_r * v_phi / r;
+
+}
+
 // This adds two state vectors: out = a + b * factor
 // Parameters:
 //   a[4] - first state vector
 //   b[4] - second state vector
 //   factor - scaling factor for b
 //   out[4] - result
+void addState(const double a[4], const double b[4], double factor, double out[4]) {
+    for (int i{0}; i < 4; ++i) {
+        out[i] = a[i] + b[i] * factor;
+    }
+}
 
-// TODO: Implement rk4Step() function
 // This performs one RK4 integration step
 // Parameters:
 //   ray - the ray to update (modified in place)
 //   dlambda - step size along affine parameter
+void rk4Step(Ray& ray, double dlambda) {
+    // Current state
+    double y0[4]{ray.r, ray.phi, ray.v_r, ray.v_phi};
+    double k1[4], k2[4], k3[4], k4[4], temp[4];
 
-// TODO: Implement debugRK4Integration() function
+    // k1: Slope at current point
+    geodesicRHS(ray, k1);
+
+    // k2: Slope at midpoint using k1
+    addState(y0, k1, dlambda / 2.0, temp);
+    Ray r2{ray};
+    r2.r = temp[0];
+    r2.phi = temp[1];
+    r2.v_r = temp[2];
+    r2.v_phi = temp[3];
+    geodesicRHS(r2, k2);
+
+    // k3: Slope at midpoint using k2 (better estimate which is key to RK4)
+    addState(y0, k2, dlambda / 2.0, temp);
+    Ray r3{ray};
+    r3.r = temp[0];
+    r3.phi = temp[1];
+    r3.v_r = temp[2];
+    r3.v_phi = temp[3];
+    geodesicRHS(r3, k3);
+
+    // k4: Slope at endpoint using k3
+    addState(y0, k3, dlambda, temp);
+    Ray r4{ray};
+    r4.r = temp[0];
+    r4.phi = temp[1];
+    r4.v_r = temp[2];
+    r4.v_phi = temp[3];
+    geodesicRHS(r4, k4);
+
+    // Final weighted average: (k1 + 2*k2 + 2*k3 + k4) / 6
+    ray.r     += (dlambda / 6.0) * (k1[0] + 2.0*k2[0] + 2.0*k3[0] + k4[0]);
+    ray.phi   += (dlambda / 6.0) * (k1[1] + 2.0*k2[1] + 2.0*k3[1] + k4[1]);
+    ray.v_r   += (dlambda / 6.0) * (k1[2] + 2.0*k2[2] + 2.0*k3[2] + k4[2]);
+    ray.v_phi += (dlambda / 6.0) * (k1[3] + 2.0*k2[3] + 2.0*k3[3] + k4[3]);
+
+}
+
 // This function tests the RK4 integration and verifies conserved quantities
 // Parameters:
 //   ray - the ray to integrate (passed by value, so original is not modified)
 //   num_steps - number of integration steps to perform
 //   dlambda - step size for each integration step
+void debugRK4Integration(Ray ray, int num_steps, double dlambda) {
+    std::cout << "\n=== RK4 Integration Test ===\n";
+    std::cout << "Step size (dlambda): " << dlambda << "\n";
+    std::cout << "Number of steps: " << num_steps << "\n\n";
+
+    // Store initial conserved quantities
+    double initial_L{ray.L};
+    double initial_E{ray.E};
+
+    std::cout << "Initial state:\n";
+    std::cout << "  r = " << (ray.r / rs) << " rs\n";
+    std::cout << "  φ = " << ray.phi << " rad\n";
+    std::cout << "  v_r = " << ray.v_r << "\n";
+    std::cout << "  v_φ = " << ray.v_phi << "\n\n";
+
+    // Run integration steps
+    for (int i{0}; i < num_steps; ++i) {
+        rk4Step(ray, dlambda);
+    }
+
+    std::cout << "After " << num_steps << " RK4 steps:\n";
+    std::cout << "  r = " << (ray.r / rs) << " rs\n";
+    std::cout << "  φ = " << ray.phi << " rad\n";
+    std::cout << "  v_r = " << ray.v_r << "\n";
+    std::cout << "  v_φ = " << ray.v_phi << "\n\n";
+
+    // Recompute conserved quantities
+    double current_L{ray.r * ray.r * ray.v_phi};
+    double f{1.0 - rs / ray.r};
+    double dt_dlambda{std::sqrt((ray.v_r * ray.v_r) / (f * f) + (ray.r * ray.r * ray.v_phi * ray.v_phi) / f)};
+    double current_E{f * dt_dlambda};
+
+    std::cout << "Conserved quantity check:\n";
+    std::cout << "  Initial L = " << initial_L << "\n";
+    std::cout << "  Current L = " << current_L << "\n";
+    std::cout << "  Initial E = " << initial_E << "\n";
+    std::cout << "  Current E = " << current_E << "\n";
+
+    // Calculate drift percentages
+    double L_drift{std::abs(current_L - initial_L) / std::abs(initial_L) * 100.0};
+    double E_drift{std::abs(current_E - initial_E) / std::abs(initial_E) * 100.0};
+
+    std::cout << "  L drift: " << L_drift << "%\n";
+    std::cout << "  E drift: " << E_drift << "%\n";
+}
+
 
 int main() {
     if (!glfwInit()) {
@@ -179,8 +294,10 @@ int main() {
     Ray testRay{initialX, initialY, velocityX, velocityY};
     testRay.displayConservedQuantities();
 
-    // TODO: Verify the rays conserved quantities remain constant (ie low % drift) after integration
-    // by using the debugging code provided.
+    // Run integration test
+    const double dlambda{1.0};
+    const int num_steps{10};
+    debugRK4Integration(testRay, num_steps, dlambda);
 
     while (!glfwWindowShouldClose(window)) {
         glClear(GL_COLOR_BUFFER_BIT);
