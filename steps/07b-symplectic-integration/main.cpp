@@ -21,8 +21,7 @@ const int NUM_STARS{200};
 
 // Forward declarations (needed for Ray::integrate method)
 struct Ray;
-// TODO: Replace rk4Step forward declaration with verletStep
-void rk4Step(Ray& ray, float dlambda);
+void verletStep(Ray& ray, float dlambda);
 
 void drawCircle(float x, float y, float radius, int segments) {
     glBegin(GL_TRIANGLE_FAN);
@@ -131,8 +130,7 @@ struct Ray {
         if (isCaptured() || hasEscaped(maxDistance)) {
             return;
         }
-        // TODO: Update to call verletStep instead of rk4Step
-        rk4Step(*this, dlambda);
+        verletStep(*this, dlambda);
         recordPosition();
         updateDeflection();
     }
@@ -155,93 +153,41 @@ struct Ray {
     }
 };
 
-// TODO: Replace geodesicRHS with computeAccelerations function
-// The new function should compute radial and angular accelerations directly:
-// void computeAccelerations(float r, float v_r, float v_phi, float E_val,
-//                           float& a_r, float& a_phi)
-// Geodesic equations in geometric units (RS = 1)
-// Compute geodesic right-hand side using exact Schwarzschild equations
-void geodesicRHS(const Ray& ray, float rhs[4]) {
-    float r{ray.r};
-    float v_r{ray.v_r};
-    float v_phi{ray.v_phi};
-    float E{ray.E};
+// This function computes radial and angular accelerations directly:
+// Compute accelerations for geodesic motion
+// Returns radial and angular accelerations from Schwarzschild geodesic equations
+void computeAccelerations(float r, float v_r, float v_phi, float E_val,
+                          float& a_r, float& a_phi) {
+    float f{1.0f - 1.0f / r};
+    float dt_dlambda{E_val / f};
 
-    // f = 1 - 1/r (simplified from f = 1 - rs/r since RS = 1)
-    float f_rhs{1.0f - 1.0f / r};
-    float dt_dlambda{E / f_rhs};
+    // Radial acceleration from Schwarzschild geodesic equation
+    a_r = -(1.0f / (2.0f * r * r)) * f * (dt_dlambda * dt_dlambda)
+          + (1.0f / (2.0f * r * r * f)) * (v_r * v_r)
+          + (r - 1.0f) * (v_phi * v_phi);
 
-    // rhs[0] = dr/dλ (position derivative = velocity)
-    rhs[0] = v_r;
-
-    // rhs[1] = dφ/dλ (angular position derivative = angular velocity)
-    rhs[1] = v_phi;
-
-    // rhs[2] = dv_r/dλ (radial acceleration from geodesic equation)
-    // Exact Schwarzschild null geodesic equation (with RS = 1):
-    // dv_r/dλ = -(1/(2r²))f(dt/dλ)² + (1/(2r²f))(v_r)² + (r - 1)(v_φ)²
-    rhs[2] = -(1.0f / (2.0f * r * r)) * f_rhs * (dt_dlambda * dt_dlambda)
-             + (1.0f / (2.0f * r * r * f_rhs)) * (v_r * v_r)
-             + (r - 1.0f) * (v_phi * v_phi);
-
-    // rhs[3] = dv_phi/dλ (angular acceleration from geodesic equation)
-    // dv_φ/dλ = -2v_r·v_φ/r
-    rhs[3] = -2.0f * v_r * v_phi / r;
+    // Angular acceleration: dv_phi/dlambda = -2 * v_r * v_phi / r
+    a_phi = -2.0f * v_r * v_phi / r;
 }
 
-// TODO: Delete addState function (not needed for Verlet)
-// Helper function: add two state vectors
-void addState(const float a[4], const float b[4], float factor, float out[4]) {
-    for (int i{0}; i < 4; ++i) {
-        out[i] = a[i] + b[i] * factor;
-    }
-}
+// Symplectic Velocity Verlet (Stormer-Verlet) integration step
+// Uses "kick-drift-kick" scheme that preserves phase space structure
+void verletStep(Ray& ray, float dlambda) {
+    float a_r, a_phi;
 
-// TODO: Replace rk4Step with verletStep using Velocity Verlet algorithm
-// Velocity Verlet uses a "kick-drift-kick" scheme:
-// 1. Half-kick: update velocities by half step using current accelerations
-// 2. Drift: update positions using the half-step velocities
-// 3. Half-kick: update velocities by another half step using new accelerations
-// RK4 integration step
-void rk4Step(Ray& ray, float dlambda) {
-    float y0[4]{ray.r, ray.phi, ray.v_r, ray.v_phi};
-    float k1[4], k2[4], k3[4], k4[4], temp[4];
+    // KICK: Half-step velocity update using initial accelerations
+    computeAccelerations(ray.r, ray.v_r, ray.v_phi, ray.E, a_r, a_phi);
+    float v_r_half{ray.v_r + 0.5f * dlambda * a_r};
+    float v_phi_half{ray.v_phi + 0.5f * dlambda * a_phi};
 
-    // k1 = f(y0)
-    geodesicRHS(ray, k1);
+    // DRIFT: Full-step position update using half-step velocities
+    ray.r += dlambda * v_r_half;
+    ray.phi += dlambda * v_phi_half;
 
-    // k2 = f(y0 + k1*dlambda/2)
-    addState(y0, k1, dlambda / 2.0f, temp);
-    Ray r2{ray};
-    r2.r = temp[0];
-    r2.phi = temp[1];
-    r2.v_r = temp[2];
-    r2.v_phi = temp[3];
-    geodesicRHS(r2, k2);
-
-    // k3 = f(y0 + k2*dlambda/2)
-    addState(y0, k2, dlambda / 2.0f, temp);
-    Ray r3{ray};
-    r3.r = temp[0];
-    r3.phi = temp[1];
-    r3.v_r = temp[2];
-    r3.v_phi = temp[3];
-    geodesicRHS(r3, k3);
-
-    // k4 = f(y0 + k3*dlambda)
-    addState(y0, k3, dlambda, temp);
-    Ray r4{ray};
-    r4.r = temp[0];
-    r4.phi = temp[1];
-    r4.v_r = temp[2];
-    r4.v_phi = temp[3];
-    geodesicRHS(r4, k4);
-
-    // Update: y_{n+1} = y_n + (k1 + 2k2 + 2k3 + k4) * dlambda/6
-    ray.r     += (dlambda / 6.0f) * (k1[0] + 2.0f * k2[0] + 2.0f * k3[0] + k4[0]);
-    ray.phi   += (dlambda / 6.0f) * (k1[1] + 2.0f * k2[1] + 2.0f * k3[1] + k4[1]);
-    ray.v_r   += (dlambda / 6.0f) * (k1[2] + 2.0f * k2[2] + 2.0f * k3[2] + k4[2]);
-    ray.v_phi += (dlambda / 6.0f) * (k1[3] + 2.0f * k2[3] + 2.0f * k3[3] + k4[3]);
+    // KICK: Half-step velocity update using new accelerations
+    computeAccelerations(ray.r, v_r_half, v_phi_half, ray.E, a_r, a_phi);
+    ray.v_r = v_r_half + 0.5f * dlambda * a_r;
+    ray.v_phi = v_phi_half + 0.5f * dlambda * a_phi;
 }
 
 std::vector<glm::vec2> generateStars(int count, float viewWidth, float viewHeight) {
