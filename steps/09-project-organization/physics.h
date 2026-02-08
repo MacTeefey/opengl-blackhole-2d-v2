@@ -2,22 +2,24 @@
 
 #include "ray.h"
 
-#error "TODO: Create Physics namespace with function declarations - remove this line when done"
+// Physics simulation namespace (geometric units: c = G = 1, RS = 1)
+namespace Physics {
+    // Compute radial and angular accelerations from Schwarzschild geodesic equations
+    // a_r and a_phi are filled with the computed accelerations
+    void computeAccelerations(float r, float v_r, float v_phi, float E_val,
+                              float& a_r, float& a_phi);
 
-// TODO: Create Physics namespace (geometric units: c = G = 1, RS = 1)
+    // Velocity Verlet integration step (symplectic integrator)
+    // Uses "kick-drift-kick" scheme for better energy conservation
+    void verletStep(Ray& ray, float dlambda);
 
-// TODO: Declare computeAccelerations function
-// - Takes float r, v_r, v_phi, E_val, and output refs a_r, a_phi
-// - Computes radial and angular accelerations from Schwarzschild geodesic equations
+    // Adaptive timestep based on distance from black hole
+    // Returns smaller step sizes near the black hole (r close to 1) for accuracy
+    // Returns larger step sizes far away (r > 10) for performance
+    float adaptiveStep(float r);
 
-// TODO: Declare verletStep function
-// - Takes Ray& and float dlambda
-// - Velocity Verlet integration using kick-drift-kick scheme
+    // Integrate ray by a fixed "budget" using adaptive substeps
+    // This maintains constant visual speed while using adaptive accuracy
+    void integrateWithBudget(Ray& ray, float budget, float maxDistance, int currentFrame);
+}
 
-// TODO: Declare adaptiveStep function
-// - Takes float r
-// - Returns float step size (smaller near black hole, larger far away)
-
-// TODO: Declare integrateWithBudget function
-// - Takes Ray&, float budget, float maxDistance, int currentFrame
-// - Integrates ray using adaptive substeps within fixed budget

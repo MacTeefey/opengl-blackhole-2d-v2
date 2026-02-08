@@ -5,80 +5,253 @@
 #include <random>
 #include <cmath>
 
-// TODO: Wrap all implementations in namespace Rendering { ... }
+namespace Rendering {
 
-// TODO: Implement RenderEngine constructor
-// - Parameters: int width, int height, const char* title, std::vector<Ray>& raysRef
-// - Initialize member variables: rays{&raysRef}, frame{0}
-// - Initialize GLFW with glfwInit()
-// - Create window with glfwCreateWindow()
-// - Check for errors and exit if initialization fails
-// - Make window context current with glfwMakeContextCurrent()
-// - Initialize GLEW with glewInit()
-// - Get framebuffer size with glfwGetFramebufferSize(window, &fbWidth, &fbHeight)
-// - Set viewport with glViewport(0, 0, fbWidth, fbHeight)
-// - Enable GL_LINE_SMOOTH, GL_BLEND for visual polish
-// - Set blend function with glBlendFunc()
-// - Generate stars: stars = generateStars(Visual::NUM_STARS);
+// RenderEngine implementation
+RenderEngine::RenderEngine(
+    int width,
+    int height,
+    const char* title,
+    std::vector<Ray>& raysRef
+): rays{&raysRef}, frame{0} {
+    // Initialize GLFW
+    if (!glfwInit()) {
+        std::cerr << "Failed to initialize GLFW\n";
+        std::exit(-1);
+    }
 
-// TODO: Implement RenderEngine destructor
-// - Destroy window with glfwDestroyWindow() if window exists
-// - Terminate GLFW with glfwTerminate()
+    // Create window
+    window = glfwCreateWindow(width, height, title, nullptr, nullptr);
+    if (!window) {
+        std::cerr << "Failed to create window\n";
+        glfwTerminate();
+        std::exit(-1);
+    }
 
-// TODO: Implement RenderEngine::beginFrame()
-// - Clear screen with glClear()
-// - Set background color with glClearColor()
-// - Set up projection matrix with glMatrixMode(), glLoadIdentity(), glOrtho()
-// - Reset modelview matrix
+    glfwMakeContextCurrent(window);
+    glfwSwapInterval(1);  // Enable VSync to limit frame rate to monitor refresh rate
 
-// TODO: Implement RenderEngine::updatePhysics()
-// - Loop through all rays (*rays)
-// - Call ray.integrate(Simulation::INTEGRATION_STEP, Simulation::MAX_DISTANCE, frame)
-// - Increment frame counter
+    // Initialize GLEW
+    glewExperimental = GL_TRUE;
+    if (glewInit() != GLEW_OK) {
+        std::cerr << "Failed to initialize GLEW\n";
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        std::exit(-1);
+    }
 
-// TODO: Implement RenderEngine::drawFrame()
-// - Draw stars: drawStars(stars)
-// - Draw photon sphere (cyan dashed circle, lineWidth 2.0f, radius = 1.5 * BlackHole::rs)
-// - Draw event horizon (black filled circle, radius = BlackHole::rs)
-// - Draw point source marker: drawPointSource(Visual::POINT_SOURCE_X, Visual::POINT_SOURCE_Y)
-// - Draw all rays: drawRays(*rays, frame)
+    int fbWidth, fbHeight;
+    glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
+    glViewport(0, 0, fbWidth, fbHeight);
 
-// TODO: Implement RenderEngine::endFrame()
-// - Swap buffers with glfwSwapBuffers()
-// - Poll events with glfwPollEvents()
+    // Enable visual polish features
+    glEnable(GL_LINE_SMOOTH);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
 
-// TODO: Implement RenderEngine::shouldClose()
-// - Return result of glfwWindowShouldClose()
+    // Generate background stars
+    stars = generateStars(Visual::NUM_STARS);
+}
 
-// TODO: Implement generateStars function
-// - Create random number generator
-// - Generate random star positions
-// - Return vector of positions
+RenderEngine::~RenderEngine() {
+    if (window) {
+        glfwDestroyWindow(window);
+    }
+    glfwTerminate();
+}
 
-// TODO: Implement drawStars function
-// - Create random brightness distribution from 0.5f to 1.0f
-// - Use GL_POINTS to draw each star with varying grayscale brightness
+void RenderEngine::beginFrame(float viewWidth, float viewHeight) {
+    glClear(GL_COLOR_BUFFER_BIT);
+    glClearColor(0.02f, 0.02f, 0.05f, 1.0f);
 
-// TODO: Implement drawCircle function
-// - Calculate vertices around circle
-// - Use GL_TRIANGLE_FAN to draw filled circle
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(-viewWidth, viewWidth, -viewHeight, viewHeight, -1.0, 1.0);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+}
 
-// TODO: Implement drawCircleOutline function
-// - Calculate vertices around circle
-// - Use GL_LINE_LOOP to draw outline
+void RenderEngine::endFrame() {
+    glfwSwapBuffers(window);
+    glfwPollEvents();
+}
 
-// TODO: Implement drawDashedCircle function
-// - Loop through segments with step of 2
-// - Draw line segments for dashed effect
+bool RenderEngine::shouldClose() const {
+    return glfwWindowShouldClose(window);
+}
 
-// TODO: Implement drawRays function
-// - Loop through all rays
-// - Check if ray is active
-// - Set color based on scenario
-// - Draw trail using GL_LINE_STRIP
+void RenderEngine::updatePhysics() {
+    // Integrate all active rays using adaptive budget-based integration
+    for (auto& ray : *rays) {
+        Physics::integrateWithBudget(ray, Simulation::BUDGET_PER_FRAME,
+                                     Simulation::MAX_DISTANCE, frame);
+    }
+    ++frame;
+}
 
-// TODO: Implement drawPointSource function
-// - Draw a small filled circle
-// - Draw a larger outline for visibility
+void RenderEngine::drawFrame() {
+    // Background stars
+    drawStars(stars);
 
-// TODO: Close namespace Rendering
+    // Photon sphere outline (dashed for visual distinction)
+    glColor3f(0.0f, 0.8f, 0.8f);
+    glLineWidth(2.0f);
+    const float photonRadius{static_cast<float>(1.5 * BlackHole::RS)};
+    drawDashedCircle(0.0f, 0.0f, photonRadius, Visual::CIRCLE_SEGMENTS);
+
+    // Event horizon (black)
+    glColor3f(0.0f, 0.0f, 0.0f);
+    const float eventRadius{static_cast<float>(BlackHole::RS)};
+    drawCircle(0.0f, 0.0f, eventRadius, Visual::CIRCLE_SEGMENTS);
+
+    // Mark the point source location
+    drawPointSource(Visual::POINT_SOURCE_X, Visual::POINT_SOURCE_Y);
+
+    // Color-coded ray trails
+    drawRays(*rays, frame);
+}
+
+std::vector<glm::vec2> generateStars(int count) {
+    std::vector<glm::vec2> stars;
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<float> distX(-Visual::VIEW_WIDTH, Visual::VIEW_WIDTH);
+    std::uniform_real_distribution<float> distY(-Visual::VIEW_HEIGHT, Visual::VIEW_HEIGHT);
+
+    for (int i{0}; i < count; ++i) {
+        stars.push_back(glm::vec2(distX(gen), distY(gen)));
+    }
+    return stars;
+}
+
+void drawStars(const std::vector<glm::vec2>& stars) {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<float> brightness(0.5f, 1.0f);
+
+    glPointSize(2.0f);
+    glBegin(GL_POINTS);
+    for (const auto& star : stars) {
+        float b = brightness(gen);
+        glColor3f(b, b, b);  // Grayscale brightness
+        glVertex2f(star.x, star.y);
+    }
+    glEnd();
+}
+
+void drawCircle(float x, float y, float radius, int segments) {
+    glBegin(GL_TRIANGLE_FAN);
+    glVertex2f(x, y);
+
+    for (int i{0}; i <= segments; ++i) {
+        const float angle{(static_cast<float>(i) * 2.0f * static_cast<float>(M_PI)) / static_cast<float>(segments)};
+        const float px{x + radius * std::cos(angle)};
+        const float py{y + radius * std::sin(angle)};
+        glVertex2f(px, py);
+    }
+
+    glEnd();
+}
+
+void drawCircleOutline(float x, float y, float radius, int segments) {
+    glBegin(GL_LINE_LOOP);
+
+    for (int i{0}; i < segments; ++i) {
+        const float angle{(static_cast<float>(i) * 2.0f * static_cast<float>(M_PI)) / static_cast<float>(segments)};
+        const float px{x + radius * std::cos(angle)};
+        const float py{y + radius * std::sin(angle)};
+        glVertex2f(px, py);
+    }
+
+    glEnd();
+}
+
+void drawDashedCircle(float x, float y, float radius, int segments) {
+    for (int i{0}; i < segments; i += 2) {
+        const float theta1{(static_cast<float>(i) * 2.0f * static_cast<float>(M_PI)) / static_cast<float>(segments)};
+        const float theta2{(static_cast<float>(i + 1) * 2.0f * static_cast<float>(M_PI)) / static_cast<float>(segments)};
+
+        glBegin(GL_LINES);
+        glVertex2f(x + radius * std::cos(theta1), y + radius * std::sin(theta1));
+        glVertex2f(x + radius * std::cos(theta2), y + radius * std::sin(theta2));
+        glEnd();
+    }
+}
+
+void drawRays(const std::vector<Ray>& rays, int currentFrame) {
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glLineWidth(1.5f);
+
+    for (const auto& ray : rays) {
+        // Only draw rays that have been activated
+        if (!ray.isActive(currentFrame) || ray.trail.size() < 2) {
+            continue;
+        }
+
+        float r, g, b;
+
+        // Different color schemes for different scenarios
+        if (ray.scenario == RayScenario::POINT_SOURCE) {
+            // Point source rays: Green to Yellow gradient
+            const float maxDeflection{static_cast<float>(M_PI)};
+            const float t{std::min(1.0f, static_cast<float>(ray.deflection) / maxDeflection)};
+            r = 0.5f + 0.5f * t;  // 0.5 to 1.0
+            g = 1.0f;             // Always green
+            b = 0.0f;
+        } else if (ray.scenario == RayScenario::ORBITING) {
+            // Orbiting ray: Bright magenta/purple
+            r = 1.0f;
+            g = 0.2f;
+            b = 1.0f;
+        } else {
+            // Parallel rays: Blue to red gradient (original)
+            const float maxDeflection{static_cast<float>(M_PI)};
+            const float t{std::min(1.0f, static_cast<float>(ray.deflection) / maxDeflection)};
+            r = t;
+            g = 0.5f * (1.0f - t);
+            b = 1.0f - t;
+        }
+
+        // Draw trail with fading
+        glBegin(GL_LINE_STRIP);
+        for (size_t i{0}; i < ray.trail.size(); ++i) {
+            const float alpha{0.2f + 0.8f * static_cast<float>(i) / static_cast<float>(ray.trail.size() - 1)};
+
+            glColor4f(r, g, b, alpha);
+            glVertex2f(ray.trail[i].x, ray.trail[i].y);
+        }
+        glEnd();
+    }
+
+    // Draw current ray positions as bright dots
+    glPointSize(3.0f);
+    glBegin(GL_POINTS);
+    for (const auto& ray : rays) {
+        if (ray.isActive(currentFrame) && !ray.trail.empty() && !ray.isCaptured()) {
+            // Color-code dots by scenario
+            if (ray.scenario == RayScenario::POINT_SOURCE) {
+                glColor3f(0.5f, 1.0f, 0.0f);  // Lime green
+            } else if (ray.scenario == RayScenario::ORBITING) {
+                glColor3f(1.0f, 0.2f, 1.0f);  // Magenta
+            } else {
+                glColor3f(1.0f, 1.0f, 0.0f);  // Yellow
+            }
+            glVertex2f(ray.trail.back().x, ray.trail.back().y);
+        }
+    }
+    glEnd();
+
+    glDisable(GL_BLEND);
+}
+
+void drawPointSource(float x, float y) {
+    glPointSize(8.0f);
+    glColor3f(0.5f, 1.0f, 0.0f);
+    glBegin(GL_POINTS);
+    glVertex2f(x, y);
+    glEnd();
+}
+
+} // namespace Rendering

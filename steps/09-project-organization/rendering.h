@@ -6,48 +6,56 @@
 #include <vector>
 #include "ray.h"
 
-#error "TODO: Create Rendering namespace with RenderEngine and function declarations - remove this line when done"
+// Rendering namespace for all OpenGL drawing operations
+namespace Rendering {
+    // RenderEngine handles all GLFW/OpenGL initialization and frame rendering
+    struct RenderEngine {
+        GLFWwindow* window;
+        std::vector<glm::vec2> stars;
+        std::vector<Ray>* rays;
+        int frame;
 
-// TODO: Create Rendering namespace
+        // Initialize GLFW, GLEW, and create window with rendering state
+        RenderEngine(int width, int height, const char* title,
+                     std::vector<Ray>& raysRef);
 
-// TODO: Create RenderEngine struct with the following members:
-// - GLFWwindow* window
-// - std::vector<glm::vec2> stars
-// - std::vector<Ray>* rays (pointer to external rays vector)
-// - int frame
+        // Cleanup
+        ~RenderEngine();
 
-// TODO: Add RenderEngine constructor
-// - Parameters: int width, int height, const char* title, std::vector<Ray>& raysRef
-// - Initializes GLFW/GLEW, creates window, generates stars
+        // Setup projection and clear screen (call at start of each frame)
+        void beginFrame(float viewWidth, float viewHeight);
 
-// TODO: Add RenderEngine destructor
-// - Cleans up GLFW resources
+        // Update physics simulation for all rays using adaptive integration
+        void updatePhysics();
 
-// TODO: Add RenderEngine methods:
-// - void beginFrame(float viewWidth, float viewHeight) - Setup projection and clear screen
-// - void updatePhysics() - Integrate all rays using adaptive budget-based stepping
-// - void drawFrame() - Draw entire scene (stars, black hole, rays, point source)
-// - void endFrame() - Swap buffers and poll events
-// - bool shouldClose() const - Check if window should close
+        // Draw entire scene (stars, black hole, rays, point source)
+        void drawFrame();
 
-// TODO: Declare generateStars function
-// - Returns vector<glm::vec2>
-// - Takes int count, float viewWidth, float viewHeight
+        // Swap buffers and poll events (call at end of each frame)
+        void endFrame();
 
-// TODO: Declare drawStars function
-// - Takes const vector<glm::vec2>& parameter
+        // Check if window should close
+        bool shouldClose() const;
+    };
 
-// TODO: Declare drawCircle function
-// - Takes x, y, radius, segments
+    // Generate random background stars
+    std::vector<glm::vec2> generateStars(int count);
 
-// TODO: Declare drawCircleOutline function
-// - Takes x, y, radius, segments
+    // Draw background stars
+    void drawStars(const std::vector<glm::vec2>& stars);
 
-// TODO: Declare drawDashedCircle function
-// - Takes x, y, radius, segments
+    // Draw filled circle (for event horizon)
+    void drawCircle(float x, float y, float radius, int segments);
 
-// TODO: Declare drawRays function
-// - Takes const vector<Ray>& and currentFrame
+    // Draw circle outline (for photon sphere)
+    void drawCircleOutline(float x, float y, float radius, int segments);
 
-// TODO: Declare drawPointSource function
-// - Takes x, y coordinates
+    // Draw dashed circle (for photon sphere with visual distinction)
+    void drawDashedCircle(float x, float y, float radius, int segments);
+
+    // Draw all active rays with color coding
+    void drawRays(const std::vector<Ray>& rays, int currentFrame);
+
+    // Draw point source marker
+    void drawPointSource(float x, float y);
+}
