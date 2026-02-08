@@ -199,19 +199,44 @@ void verletStep(Ray& ray, float dlambda) {
     ray.v_phi += a_phi * half_dt;
 }
 
-// TODO: Implement adaptiveStep function
-// Returns smaller step sizes near the black hole (r close to 1) for accuracy
-// Returns larger step sizes far away (r > 10) for performance
-// Use minStep = 0.01f, maxStep = 0.1f
-// Scale linearly based on (r - 1.0f) / 10.0f, clamped to [0, 1]
+// Adaptive timestep: smaller steps near black hole for accuracy
+float adaptiveStep(float r) {
+    // Near event horizon (r ~ 1): step = 0.01
+    // Far away (r > 10): step = 0.1
+    const float minStep{0.01f};
+    const float maxStep{0.1f};
+    float factor{std::min((r - 1.0f) / 10.0f, 1.0f)};
+    factor = std::max(factor, 0.0f);  // Clamp to non-negative
+    return minStep + factor * (maxStep - minStep);
+}
 
-// TODO: Implement integrate function (replaces the Ray::integrate method)
-// void integrate(Ray& ray, float distance, float maxDistance)
 // Integrates ray by a fixed distance using adaptive substeps
 // This maintains constant visual speed while using adaptive accuracy
 // Loop: while remaining > 0, take adaptive steps
 // Record position once at the end (not after every substep)
 // Call updateDeflection() after recording position
+// Integrate ray by a fixed distance using adaptive substeps
+// This gives constant visual speed while maintaining accuracy near black hole
+void integrate(Ray& ray, float distance, float maxDistance) {
+    if (ray.isCaptured() || ray.hasEscaped(maxDistance)) {
+        return; // Don't integrate rays that are already done.
+    }
+
+    float remaining{distance};
+    while (remaining > 0.0f) { // Keep taking steps until we've covered the requested distance.
+        float step{adaptiveStep(ray.r)};
+        step = std::min(step, remaining);  // Don't exceed remaining distance
+
+        // Take the step and track how much distance remains.
+        verletStep(ray, step);
+        remaining -= step; 
+
+        if (ray.isCaptured() || ray.hasEscaped(maxDistance)) {
+            break; // Stop early if the ray reaches its destination
+        }
+    }
+    ray.recordPosition(); // Record position only at the end, not after every substep. This keeps the trail sparse.
+}
 
 std::vector<glm::vec2> generateStars(int count, float viewWidth, float viewHeight) {
     std::vector<glm::vec2> stars;
@@ -349,9 +374,10 @@ int main() {
         std::cout << "Ray " << i << ": y = " << startY << " RS\n";
     }
 
-    // TODO: Define distancePerFrame constant (e.g., 0.08f)
     // Fixed distance per frame = constant visual speed
     // Adaptive substeps = accuracy near black hole
+    const float distancePerFrame{0.08f};
+
 
     while (!glfwWindowShouldClose(window)) {
         glClear(GL_COLOR_BUFFER_BIT);
@@ -376,11 +402,11 @@ int main() {
         glLineWidth(2.0f);
         drawDashedCircle(0.0f, 0.0f, 1.5f * RS, 100);
 
-        // TODO: Replace with adaptive integration
-        // Use integrate(ray, distancePerFrame, maxDistance)
+        // Integrate with adaptive stepping
         for (auto& ray : rays) {
-            ray.integrate(0.05f, maxDistance);
+            integrate(ray, distancePerFrame, maxDistance);
         }
+
 
         // Color-coded ray trails
         drawRays(rays);
