@@ -71,9 +71,11 @@ if %ERRORLEVEL% NEQ 0 (
     echo [ERROR] CMake configuration failed
     echo.
     echo Common fixes:
-    echo   1. Install dependencies with vcpkg:
-    echo      vcpkg install glew glfw3 glm
+    echo   1. Install dependencies with vcpkg (from project folder):
     echo      set VCPKG_ROOT=C:\path\to\vcpkg
+    echo      "%VCPKG_ROOT%\vcpkg.exe" install
+    echo      Then run build.bat again.
+    echo      (Use full path - vcpkg does not need to be on PATH.)
     echo.
     echo   2. Or download and install dependencies manually
     echo.
