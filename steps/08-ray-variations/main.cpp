@@ -62,8 +62,11 @@ void drawDashedCircle(float x, float y, float radius, int segments) {
     }
 }
 
-// TODO: Add enum class RayScenario with three values:
-// PARALLEL, POINT_SOURCE, and ORBITING
+enum class RayScenario {
+    PARALLEL,      // Parallel rays from left side (distant starlight)
+    POINT_SOURCE,  // Rays emanating from a single point (gravitational lensing)
+    ORBITING       // Special orbiting ray (photon sphere)
+};
 
 struct Ray {
     // Polar coordinates
@@ -81,12 +84,12 @@ struct Ray {
     float initialVelocityAngle;
     float deflection{0.0f};
 
-    // TODO: Add two new member variables:
-    // RayScenario scenario;
-    // int startFrame;
+    RayScenario scenario;
+    int startFrame;
 
-    // TODO: Update constructor to accept scenario and startFrame parameters
-    Ray(float x, float y, float vx, float vy) {
+    Ray(double x, double y, double vx, double vy, RayScenario scenario, int startFrame = 0)
+    : scenario{scenario}, startFrame{startFrame} {
+
         // Step 1: Convert Cartesian position to polar coordinates
         r = std::sqrt(x * x + y * y);
         phi = std::atan2(y, x);
@@ -119,6 +122,10 @@ struct Ray {
         trail.push_back(glm::vec2(x, y));
     }
 
+    bool isActive(int currentFrame) const {
+        return currentFrame >= startFrame;
+    }
+
     bool isCaptured() const {
         return r <= RS * 1.01f;
     }
@@ -132,8 +139,6 @@ struct Ray {
         const float y{r * std::sin(phi)};
         trail.push_back(glm::vec2(x, y));
     }
-
-    // TODO: Add isActive(int currentFrame) method that returns currentFrame >= startFrame
 
     void updateDeflection() {
         // Convert current polar velocity back to Cartesian to get velocity direction
@@ -210,16 +215,15 @@ float adaptiveStep(float r) {
     return minStep + factor * (maxStep - minStep);
 }
 
-// TODO: Update integrate to accept currentFrame parameter
-// Add isActive check before isCaptured/hasEscaped checks
-// Integrate ray by a fixed distance using adaptive substeps
+// Adds isActive check before isCaptured/hasEscaped checks
+// Integrates ray by a fixed distance using adaptive substeps
 // This maintains constant visual speed while using adaptive accuracy
-void integrate(Ray& ray, float distance, float maxDistance) {
-    if (ray.isCaptured() || ray.hasEscaped(maxDistance)) {
+void integrateWithBudget(Ray& ray, float dlambda, float maxDistance, int currentFrame) {
+    if (!ray.isActive(currentFrame) || ray.isCaptured() || ray.hasEscaped(maxDistance)) {
         return;
     }
 
-    float remaining{distance};
+    float remaining{dlambda};
     while (remaining > 0.0f) {
         float step{adaptiveStep(ray.r)};
         step = std::min(step, remaining);  // Don't exceed remaining distance
@@ -263,20 +267,14 @@ void drawStars(const std::vector<glm::vec2>& stars) {
     glEnd();
 }
 
-// TODO: Update drawRays to accept currentFrame parameter
-// TODO: Skip inactive rays using isActive(currentFrame)
-// TODO: Color-code by scenario type:
-//   POINT_SOURCE: green to yellow gradient
-//   ORBITING: bright magenta
-//   PARALLEL: cyan to red gradient (current behavior)
 // Draw ray trails with fading
-void drawRays(const std::vector<Ray>& rays) {
+void drawRays(const std::vector<Ray>& rays, int currentFrame) {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glLineWidth(1.5f);
 
     for (const auto& ray : rays) {
-        if (ray.trail.size() < 2) {
+        if (!ray.isActive(currentFrame) || ray.trail.size() < 2) {
             continue;
         }
 
@@ -284,10 +282,29 @@ void drawRays(const std::vector<Ray>& rays) {
         const float maxDeflection{static_cast<float>(M_PI)};
         const float t{std::min(1.0f, ray.deflection / maxDeflection)};
 
-        // Cyan (minimal deflection) → Purple (moderate) → Red (extreme deflection)
-        const float r{t};              // 0 → 1
-        const float g{0.5f * (1.0f - t)};  // 0.5 → 0
-        const float b{1.0f - t};       // 1 → 0
+        // Color based on ray scenario
+        float r, g, b;
+
+        if (ray.scenario == RayScenario::POINT_SOURCE) {
+            // Green to Yellow gradient based on deflection
+            const float maxDeflection{static_cast<float>(M_PI)};
+            const float t{std::min(1.0f, static_cast<float>(ray.deflection) / maxDeflection)};
+            r = 0.5f + 0.5f * t;  // 0.5 to 1.0 (increases with deflection)
+            g = 1.0f;             // Constant green
+            b = 0.0f;
+        } else if (ray.scenario == RayScenario::ORBITING) {
+            // Solid bright magenta (no gradient)
+            r = 1.0f;
+            g = 0.2f;
+            b = 1.0f;
+        } else {
+            // PARALLEL: Cyan to Purple to Red gradient
+            const float maxDeflection{static_cast<float>(M_PI)};
+            const float t{std::min(1.0f, static_cast<float>(ray.deflection) / maxDeflection)};
+            r = t;                    // 0 to 1
+            g = 0.5f * (1.0f - t);    // 0.5 to 0
+            b = 1.0f - t;             // 1 to 0
+        }
 
         // Draw trail with fading
         glBegin(GL_LINE_STRIP);
@@ -300,13 +317,19 @@ void drawRays(const std::vector<Ray>& rays) {
         glEnd();
     }
 
-    // TODO: Color-code ray position dots by scenario type
-    // Draw current ray positions as bright yellow points
+    // Draw current ray positions with scenario-specific colors
     glPointSize(3.0f);
-    glColor3f(1.0f, 1.0f, 0.0f);
     glBegin(GL_POINTS);
     for (const auto& ray : rays) {
-        if (!ray.trail.empty() && !ray.isCaptured()) {
+        if (ray.isActive(currentFrame) && !ray.trail.empty() && !ray.isCaptured()) {
+            // Color by scenario
+            if (ray.scenario == RayScenario::POINT_SOURCE) {
+                glColor3f(0.5f, 1.0f, 0.0f);  // Lime green
+            } else if (ray.scenario == RayScenario::ORBITING) {
+                glColor3f(1.0f, 0.2f, 1.0f);  // Magenta
+            } else {
+                glColor3f(1.0f, 1.0f, 0.0f);  // Yellow
+            }
             glVertex2f(ray.trail.back().x, ray.trail.back().y);
         }
     }
@@ -364,44 +387,112 @@ int main() {
 
     // TODO: Replace this simple ray generation with THREE scenarios:
 
-    // SCENARIO 1 - Special orbiting ray near photon sphere (1 ray, starts at frame 0)
-    // Position: x = -0.9 * viewWidth, y = 2.577934 RS (just below critical 2.598 RS)
-    // Velocity: horizontal at speed 1.0 (speed of light)
-    // Use RayScenario::ORBITING and startFrame 0
+    // SCENARIO 1: Special orbiting ray near photon sphere (1 ray)
+    // Starts at frame 0 from left side of screen
+    std::cout << "=== Scenario 1: Orbiting Ray ===\n";
+    const float rs = 1.0f;
+    const double orbitStartX{-0.9 * viewWidth}; // 90% left
+    const double orbitStartY{2.577934 * rs}; // Tuned for multiple spirals
+    const double orbitVx{1.0f}; // Horizontal toward black hole
+    const double orbitVy{0.0};
+    rays.emplace_back(orbitStartX, orbitStartY, orbitVx, orbitVy, RayScenario::ORBITING, 0);
 
-    // SCENARIO 2 - Point source from top-left corner (25 rays, starts at frame 700)
-    // Source position: x = -0.95 * viewWidth, y = 0.85 * viewHeight
-    // Calculate angle from source to black hole, spread 25 rays in 60-degree cone
-    // Each ray travels at speed 1.0 in its calculated direction
-    // Use RayScenario::POINT_SOURCE and startFrame 700
-    // Store sourceX and sourceY for drawing the marker
+    std::cout << "  Orbiting ray starts at x = " << orbitStartX / 1e9 << " Gm\n";
+    std::cout << "  Impact parameter = " << orbitStartY / rs << " rs (creates multiple spirals!)\n";
+    std::cout << "  Horizontal velocity = " << orbitVx / 1.0f << " c\n";
+    std::cout << "  Starts at frame: 0\n";
+    std::cout << "  Expected: Multiple dramatic spiral orbits before escape\n\n";
 
-    // SCENARIO 3 - Parallel rays from left (70 rays, starts at frame 1200)
-    // Evenly distributed from -viewHeight to +viewHeight
-    // All travel horizontally at speed 1.0
-    // Use RayScenario::PARALLEL and startFrame 1200
+    // SCENARIO 2: Point source from top-left corner (25 rays)
+    // Starts at frame 180
+    std::cout << "=== Scenario 2: Point Source from Top-Left ===\n";
 
-    // Current simple ray generation (replace with scenarios above)
-    const int numRays{30};
-    const float startX{-viewWidth};  // Left edge of viewport
-    const float vx{1.0f};   // Speed of light = 1 in geometric units
-    const float vy{0.0f};
+    const double sourceX{-0.95 * viewWidth};  // 95% left for dramatic lensing
+    const double sourceY{0.85 * viewHeight};  // 85% up
+    const int numPointRays{25};
 
-    for (int i{0}; i < numRays; ++i) {
-        const float startY{2.5f + i * 0.05f};
+    // Calculate direction from source to black hole
+    const double toBlackHoleX{0.0 - sourceX};
+    const double toBlackHoleY{0.0 - sourceY};
+    const double baseAngle{std::atan2(toBlackHoleY, toBlackHoleX)};
 
-        rays.emplace_back(startX, startY, vx, vy);
+    std::cout << "  Source position: (" << sourceX / 1e9 << ", " << sourceY / 1e9 << ") Gm\n";
+    std::cout << "  Aiming toward black hole at angle: " << baseAngle * 180.0 / M_PI << " degrees\n";
+    std::cout << "  Starts at frame: 180\n";
 
-        std::cout << "Ray " << i << ": y = " << startY << " RS\n";
+    for (int i{0}; i < numPointRays; ++i) {
+        // Spread rays in 60-degree cone around direction to black hole
+        const double coneSpread{M_PI / 3.0};  // 60 degrees total (π/3 radians)
+        const double angleOffset{-coneSpread / 2.0 + coneSpread * static_cast<double>(i) / static_cast<double>(numPointRays - 1)};
+        const double angle{baseAngle + angleOffset};
+
+        // Calculate velocity components (all rays travel at speed c)
+        const double vx{1.0f * std::cos(angle)};
+        const double vy{1.0f * std::sin(angle)};
+
+        rays.emplace_back(sourceX, sourceY, vx, vy, RayScenario::POINT_SOURCE, 180);
+
+        // Log every 5th ray
+        if (i % 5 == 0) {
+            std::cout << "  Point ray " << i << ": angle = " << angle * 180.0 / M_PI
+                      << " degrees (offset " << angleOffset * 180.0 / M_PI << ")\n";
+        }
     }
 
+    std::cout << "\n";
+
+    // SCENARIO 3: Parallel rays from left (70 rays)
+    // Starts at frame 360
+    std::cout << "=== Scenario 3: Parallel Rays ===\n";
+
+    const int numParallelRays{70};
+    const double parallelStartX{-1e11};  // 100 Gm to the left
+    const double parallelVx{1.0f};          // Horizontal, rightward
+    const double parallelVy{0.0};        // No vertical component
+
+    std::cout << "  Starts at frame: 360\n";
+    
+    for (int i{0}; i < numParallelRays; ++i) {
+        // Calculate interpolation parameter [0, 1]
+        const double t{static_cast<double>(i) / static_cast<double>(numParallelRays - 1)};
+
+        // Map to full viewport height: -viewHeight to +viewHeight
+        const double startY{-viewHeight + t * 2.0 * viewHeight};
+
+        rays.emplace_back(parallelStartX, startY, parallelVx, parallelVy,   RayScenario::PARALLEL, 360);
+
+        // Log every 10th ray
+        if (i % 10 == 0) {
+            const double impactParam{std::abs(startY)};
+            std::cout << "  Parallel ray " << i << ": y = " << startY / 1e9
+                      << " Gm, impact = " << impactParam / rs << " rs\n";
+        }
+    }
+
+    std::cout << "\n";
+
+
     // TODO: Print summary showing total count and breakdown by scenario type
+
+    const int totalRays{static_cast<int>(rays.size())};
+    std::cout << "=== Total: " << totalRays << " rays ===\n";
+    std::cout << "  1 orbiting (magenta) - starts frame 0\n";
+    std::cout << "  " << numPointRays << " point source (green-yellow gradient) - starts frame 180\n";
+    std::cout << "  " << numParallelRays << " parallel (cyan-red gradient) - starts frame 360\n\n";
 
     // Fixed distance per frame = constant visual speed
     // Adaptive substeps = accuracy near black hole
     const float distancePerFrame{0.08f};
 
-    // TODO: Add frame counter to track which rays should be active
+    int frame{0};
+
+    std::cout << "=== Simulation Starting ===\n";
+    std::cout << "Watch for sequential activation:\n";
+    std::cout << "  Frame 0: Magenta orbiting ray near photon sphere begins\n";
+    std::cout << "  Frame 180: Green-yellow point source rays appear, aimed at black hole\n";
+    std::cout << "  Frame 360: Cyan-red parallel rays fill the screen\n";
+    std::cout << "  - Some rays captured by event horizon, others escape\n\n";
+
 
     while (!glfwWindowShouldClose(window)) {
         glClear(GL_COLOR_BUFFER_BIT);
@@ -426,22 +517,26 @@ int main() {
         glLineWidth(2.0f);
         drawDashedCircle(0.0f, 0.0f, 1.5f * RS, 100);
 
-        // TODO: Draw point source marker (bright green dot, size 8.0) at sourceX, sourceY
+        // Mark the point source location (bright green)
+        glPointSize(8.0f);
+        glColor3f(0.5f, 1.0f, 0.0f);
+        glBegin(GL_POINTS);
+        glVertex2f(static_cast<float>(sourceX), static_cast<float>(sourceY));
+        glEnd();
 
-        // TODO: Pass currentFrame to integrate
+
         // Integrate with adaptive stepping
         for (auto& ray : rays) {
-            integrate(ray, distancePerFrame, maxDistance);
+            integrateWithBudget(ray, distancePerFrame, maxDistance, frame);
         }
 
-        // TODO: Pass currentFrame to drawRays
         // Color-coded ray trails
-        drawRays(rays);
+        drawRays(rays, frame);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
 
-        // TODO: Increment frame counter
+        ++frame;
     }
 
     glfwDestroyWindow(window);
