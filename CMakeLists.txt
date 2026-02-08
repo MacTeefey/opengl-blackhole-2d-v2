@@ -5,21 +5,36 @@ project(blackhole)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Find OpenGL package (REQUIRED)
+# Find required packages
 find_package(OpenGL REQUIRED)
-# Find glfw3 package (CONFIG REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
-
-# Find GLEW package (REQUIRED)
 find_package(GLEW REQUIRED)
-# Find glm package (CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 
-# Create a DEPS variable with all library targets:
-#   glfw GLEW::GLEW glm::glm OpenGL::GL
+# Dependencies to link
 set(DEPS glfw GLEW::GLEW glm::glm OpenGL::GL)
 
-add_executable(blackhole main.cpp)
+# Source files organized by module
+set(SOURCES
+    main.cpp
+    ray.cpp
+    physics.cpp
+    rendering.cpp
+)
 
-# Link libraries to the blackhole executable using ${DEPS}
+# Header files
+set(HEADERS
+    constants.h
+    ray.h
+    physics.h
+    rendering.h
+)
+
+# Create executable
+add_executable(blackhole ${SOURCES} ${HEADERS})
+
+# Include directories (optional - modern imported targets handle this automatically)
+target_include_directories(blackhole PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Link libraries
 target_link_libraries(blackhole PRIVATE ${DEPS})
